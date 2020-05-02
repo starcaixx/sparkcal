@@ -1,5 +1,8 @@
 package com.longbei.bigdata.offline
 
+import java.net.URLDecoder
+
+import org.apache.hadoop.fs.Path
 import org.apache.spark.rdd.RDD
 import org.apache.spark.{SparkConf, SparkContext}
 
@@ -15,16 +18,22 @@ object UserBehaviorCleaner {
     val inputPath = args(0)
     val outputPath = args(1)
 
-    val conf = new SparkConf().setAppName(getClass.getSimpleName).setMaster("local[2]")
+
+    print(inputPath+":out:"+outputPath)
+    val conf = new SparkConf().setAppName(getClass.getSimpleName).setMaster("local[4]")
     val sc = new SparkContext(conf)
+
+    val hdfs = org.apache.hadoop.fs.FileSystem.get(sc.hadoopConfiguration)
+    if (hdfs.exists(new Path(outputPath))) {
+      hdfs.delete(new Path(outputPath),true)
+    }
 
     // 通过输入路径获取RDD
     val eventRDD: RDD[String] = sc.textFile(inputPath)
 
     // 清洗数据，在算子中不要写大量业务逻辑，应该将逻辑封装到方法中
     eventRDD.filter(event => checkEventValid(event))  // 验证数据有效性
-      .map( event => maskPhone(event))  // 手机号脱敏
-      .map(event => repairUsername(event)) // 修复username中带有\n导致的换行
+      .map(event=>urlDecode(event))//url解码
       .coalesce(3)
       .saveAsTextFile(outputPath)
 
@@ -67,12 +76,24 @@ object UserBehaviorCleaner {
     }
     fields.mkString("\t")
   }
+
   /**
-    * 验证数据格式是否正确，只有切分后长度为17的才算正确
+    * url解码
+    * @param event
+    * @return
+    */
+  def urlDecode(event: String): String = {
+    val str = URLDecoder.decode(event.split("\t")(9), "utf-8")
+    print(str)
+    str
+  }
+
+  /**
+    * 验证数据格式是否正确，只有切分后长度为10的才算正确
     * @param event
     */
   def checkEventValid(event : String) ={
     val fields = event.split("\t")
-    fields.length == 17
+    fields.length == 10 && !"".equals(fields(9))
   }
 }
