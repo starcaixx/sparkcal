@@ -1,6 +1,8 @@
 package com.longbei.bigdata.offline
 
 import java.net.URLDecoder
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 
 import com.longbei.bigdata.comm.util.ConfigurationUtil
 import org.apache.hadoop.conf.Configuration
@@ -44,16 +46,12 @@ object UserBehaviorCleaner {
       .toDS()
     logDS
 
+    logDS.createOrReplaceTempView("t_log_tmp")
+//    session.sql("select * from t_log_tmp limit 10").show()
 
-    println(logDS.count())
-
-
-//      .coalesce(1)
-//      .saveAsTextFile(outputPath)
-
-//    session.sql()
+    val txdateInt = LocalDateTime.now().toLocalDate.format(DateTimeFormatter.ofPattern("yyyyMMdd"))
+    session.sql(s"insert overwrite table ods_log.user_behavior partition(dt=${txdateInt}) select enType,logStr from t_log_tmp")
     session.stop()
-//    sc.stop()
   }
 
   def initKerberos(): Unit ={
