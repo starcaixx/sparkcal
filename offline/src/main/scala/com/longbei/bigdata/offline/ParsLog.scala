@@ -13,7 +13,6 @@ object ParsLog {
     val output = args(1)
 
     val sparkConf: SparkConf = new SparkConf().setAppName(getClass.getSimpleName)
-
     val sc = new SparkContext(sparkConf)
 
     val session: SparkSession = SparkSession.builder().config(sparkConf).enableHiveSupport().getOrCreate()

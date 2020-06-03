@@ -11,6 +11,7 @@
     <modules>
         <module>offline</module>
         <module>comm</module>
+        <module>log-interceptor</module>
     </modules>
 
     <properties>
