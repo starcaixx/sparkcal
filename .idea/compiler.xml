@@ -9,12 +9,14 @@
         <module name="comm" />
         <module name="loginterceptor" />
         <module name="offline" />
+        <module name="online" />
       </profile>
     </annotationProcessing>
     <bytecodeTargetLevel>
       <module name="comm" target="1.8" />
       <module name="loginterceptor" target="1.8" />
       <module name="offline" target="1.8" />
+      <module name="online" target="1.8" />
       <module name="sparkcal" target="1.8" />
     </bytecodeTargetLevel>
   </component>

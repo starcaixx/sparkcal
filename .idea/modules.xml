@@ -5,6 +5,7 @@
       <module fileurl="file://$PROJECT_DIR$/comm/comm.iml" filepath="$PROJECT_DIR$/comm/comm.iml" />
       <module fileurl="file://$PROJECT_DIR$/log-interceptor/loginterceptor.iml" filepath="$PROJECT_DIR$/log-interceptor/loginterceptor.iml" />
       <module fileurl="file://$PROJECT_DIR$/offline/offline.iml" filepath="$PROJECT_DIR$/offline/offline.iml" />
+      <module fileurl="file://$PROJECT_DIR$/online/online.iml" filepath="$PROJECT_DIR$/online/online.iml" />
       <module fileurl="file://$PROJECT_DIR$/sparkcal.iml" filepath="$PROJECT_DIR$/sparkcal.iml" />
     </modules>
   </component>

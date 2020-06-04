@@ -11,12 +11,12 @@ public class Test {
         System.out.println(str1.split("\t")[9]);
 //        System.out.println(str.split(" ").length);
 //        System.out.println(str1.split("&")[0]);
-        /*try {
+        try {
             String decode = URLDecoder.decode(str1.split("\t")[9], "utf-8");
             System.out.println(decode);
         } catch (UnsupportedEncodingException e) {
             e.printStackTrace();
-        }*/
+        }
         long ts = Instant.now().toEpochMilli();
 
         System.out.println(ts);
