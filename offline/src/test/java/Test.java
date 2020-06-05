@@ -1,3 +1,6 @@
+import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.JSONObject;
+
 import java.io.UnsupportedEncodingException;
 import java.net.URLDecoder;
 import java.time.Instant;
@@ -14,6 +17,8 @@ public class Test {
         try {
             String decode = URLDecoder.decode(str1.split("\t")[9], "utf-8");
             System.out.println(decode);
+            JSONObject jsonObject = JSON.parseObject(decode.substring(decode.indexOf("{")));
+            System.out.println(jsonObject.getJSONObject("value").getString("optype"));
         } catch (UnsupportedEncodingException e) {
             e.printStackTrace();
         }
