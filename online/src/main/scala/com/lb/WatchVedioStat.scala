@@ -2,7 +2,7 @@ package com.lb
 
 import java.net.URLDecoder
 import java.time.format.DateTimeFormatter
-import java.time.{Instant, LocalDateTime, ZoneId}
+import java.time.{Instant, LocalDate, LocalDateTime, ZoneId}
 import java.util
 import java.util.ResourceBundle
 
@@ -13,6 +13,7 @@ import kafka.message.MessageAndMetadata
 import kafka.serializer.StringDecoder
 import net.ipip.ipdb.{City, CityInfo}
 import org.apache.spark.SparkConf
+import org.apache.spark.rdd.RDD
 import org.apache.spark.streaming.dstream.{DStream, InputDStream}
 import org.apache.spark.streaming.kafka.{HasOffsetRanges, KafkaUtils, OffsetRange}
 import org.apache.spark.streaming.{Seconds, StreamingContext}
@@ -39,9 +40,10 @@ object StatWatchVedioCount {
 	val interval: Long = bundle.getString("processingInterval").toLong
 	val brokers: String = bundle.getString("brokers")
 	val topic: String = bundle.getString("topic")
+	val dbIndex = bundle.getString("dbIndex").toInt
 
 	val conf: SparkConf = new SparkConf().setAppName(getClass.getSimpleName)
-  	.set("spark.streaming.stopGracefullyOnShutdown","true")//优雅关系
+  	.set("spark.streaming.stopGracefullyOnShutdown","true")//优雅关闭
   	.set("spark.streaming.backpressure.enabled","true")//开启背压
   	.set("spark.streaming.kafka.maxRatePerPartition","200")//每秒钟处理数据量
   	.set("spark.executor.instances","2")
@@ -64,7 +66,6 @@ object StatWatchVedioCount {
 	  "auto.offset.reset" -> "latest",
 	  "enable.auto.commit" -> "false"
 	)
-
 	/*存储在mysql中的offset
 	val fromOffsets: Map[TopicAndPartition, Long] = DB.readOnly { implicit session =>
 	  sql"select topic,part_id,offset from topic_offset".map { r =>
@@ -72,7 +73,10 @@ object StatWatchVedioCount {
 	  }.list.apply().toMap
 	}*/
 
-	val fromOffsets =
+	val fromOffsets = getOffsetFromRedis(dbIndex,topic).map(r=>{
+	  TopicAndPartition(topic,r._1.toInt)->r._2.toLong
+	}).toMap
+
 	println("fromOffsets:"+fromOffsets)
 	val messageHandler = (mmd:MessageAndMetadata[String, String]) => (mmd.topic,mmd.message())
 
@@ -81,19 +85,25 @@ object StatWatchVedioCount {
 	var offsetRanges = Array.empty[OffsetRange]
 	val watchuiDStream: DStream[WatchUserInfo] = kafkaDStream.transform(rdd => {
 	  offsetRanges = rdd.asInstanceOf[HasOffsetRanges].offsetRanges
+	  val jedis: Jedis = JdbcUtils.jedisPool.getResource
+	  val localDate: LocalDate = LocalDate.now()
+	  jedis.expire(localDate.toString.replace("-","")+"_watchvedio",60*60*30)
+	  jedis.close()
 	  rdd
 	})
 	  .map(msg => {
 		getCountAndDate(msg)
 	  })
 
-	//wrecord-去重
-	watchuiDStream.map(_.uid).foreachRDD(rdd=>{
-	  val uids: Array[String] = rdd.distinct().collect()
-	  for (elem <- uids) {
-
+	//record-去重,统计当日看课指标
+	watchuiDStream.foreachRDD(rdd=>{
+	  val tuples: Array[(String, String)] = rdd.map(userinfo=>(userinfo.date,userinfo.uid)).distinct().collect()
+	  val jedis: Jedis = JdbcUtils.jedisPool.getResource
+	  for (elem <- tuples) {
+		jedis.sadd(elem._1+"_watchvedio",elem._2)
 	  }
-
+	  jedis.close()
+	  saveOffsetToRedis(dbIndex,offsetRanges)
 	})
 
 	//开启检查点
@@ -113,6 +123,7 @@ object StatWatchVedioCount {
 	val localDateTime: LocalDateTime = LocalDateTime.ofInstant(Instant.ofEpochSecond(jsonObject.getLongValue("ts")), ZoneId.systemDefault())
 	val formatter: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyyMMdd")
 
+	val dateStr: String = localDateTime.format(formatter)
 	val cityInfo: CityInfo = db.findInfo(jsonObject.getString("ip"),"CN")
 	var regionName = "未知"
 	regionName = cityInfo.getRegionName
@@ -121,9 +132,31 @@ object StatWatchVedioCount {
 	  jsonObject.getJSONObject("value").getString("cid"),
 	  jsonObject.getJSONObject("value").getString("cpid"),
 	  jsonObject.getJSONObject("value").getString("cosid"),
-	  jsonObject.getJSONObject("value").getLong("wsize"))
+	  jsonObject.getJSONObject("value").getLong("wsize"),
+	  jsonObject.getLong("ts"),
+	  dateStr)
   }
 
+  /**
+	* 保存offset到redis
+	* @param db
+	* @param offsetRanges
+	*/
+  def saveOffsetToRedis(db:Int,offsetRanges:Array[OffsetRange])={
+	val jedis: Jedis = JdbcUtils.jedisPool.getResource
+	jedis.select(db)
+	for (elem <- offsetRanges) {
+	  jedis.hset(elem.topic,elem.partition.toString,elem.untilOffset.toString)
+	}
+	jedis.close()
+  }
+
+  /**
+	* 从redis中获取保存的消费者offset
+	* @param db
+	* @param topic
+	* @return
+	*/
   def getOffsetFromRedis(db:Int,topic:String)={
 	val jedis: Jedis = JdbcUtils.jedisPool.getResource
 	jedis.select(db)
@@ -138,7 +171,6 @@ object StatWatchVedioCount {
 	val offsetMap: scala.collection.mutable.Map[String,String] = result
 	offsetMap
   }
-
 }
 
-case class WatchUserInfo(uid:String,regin:String,cid:String,cpid:String,cosid:String,wsize:Long)
+case class WatchUserInfo(uid:String,regin:String,cid:String,cpid:String,cosid:String,wsize:Long,ts:Long,date:String)
