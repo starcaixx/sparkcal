@@ -47,10 +47,12 @@ object UserBehaviorCleaner {
     logDS
 
     logDS.createOrReplaceTempView("t_log_tmp")
-//    session.sql("select * from t_log_tmp limit 10").show()
+    val df = session.sql("select * from t_log_tmp limit 10")
+    val df1 = session.sql("select * from t_log_tmp limit 10")
 
     val txdateInt = LocalDateTime.now().toLocalDate.format(DateTimeFormatter.ofPattern("yyyyMMdd"))
-    session.sql(s"insert overwrite table ods_log.user_behavior_inc_p_day partition(dt=${txdateInt}) select enType,logStr from t_log_tmp")
+    session.sql(s"insert overwrite table ods_log.user_behavior_inc_p_day partition(dt=${txdateInt})" +
+      s" select enType,logStr from t_log_tmp")
     session.stop()
   }
 

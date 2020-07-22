@@ -7,10 +7,10 @@ import java.util.Properties
 import com.lb.StatWatchVedioCount.bundle
 import com.mysql.fabric.jdbc.FabricMySQLDriver
 import org.apache.commons.pool2.impl.GenericObjectPoolConfig
-import redis.clients.jedis.JedisPool
+import redis.clients.jedis.{Jedis, JedisPool}
 
 object JdbcUtils {
-  val prop = new Properties()
+  private val prop = new Properties()
   prop.load(this.getClass.getClassLoader.getResourceAsStream("jdbc.properties"))
 
   val driver = prop.getProperty("druid.driverClassName")
@@ -19,10 +19,8 @@ object JdbcUtils {
   val jdbcPassword = prop.getProperty("druid.password")
 
   private val dataSources = new util.LinkedList[Connection]()
-  lazy val jedisPool = new JedisPool(new GenericObjectPoolConfig(),
-    prop.getProperty("redisHost"),
-    prop.getProperty("redisPort").toInt,
-    prop.getProperty("redisTimeout").toInt)
+
+  private var jedisPool:JedisPool=null
 
   for (i <- 0 to 10) {
     DriverManager.registerDriver(new FabricMySQLDriver)
@@ -33,6 +31,24 @@ object JdbcUtils {
 
   def getConnection:Connection ={
     dataSources.removeFirst()
+  }
+
+  def getJedisClient:Jedis={
+    if (jedisPool==null) {
+      val poolConfig = new GenericObjectPoolConfig()
+      poolConfig.setMaxTotal(prop.getProperty("maxconnects").toInt)
+      poolConfig.setMaxIdle(prop.getProperty("maxidle").toInt)
+      poolConfig.setMinIdle(prop.getProperty("minidle").toInt)
+      poolConfig.setMaxWaitMillis(prop.getProperty("maxwaitmills").toInt)
+      poolConfig.setBlockWhenExhausted(true)
+      poolConfig.setTestOnBorrow(true)
+      jedisPool = new JedisPool(poolConfig,
+        prop.getProperty("redisHost"),
+        prop.getProperty("redisPort").toInt,
+        prop.getProperty("redisTimeout").toInt)
+    }
+
+    jedisPool.getResource
   }
 
   def releaseConnection(conn: Connection)={

@@ -1,9 +1,9 @@
 package com.longbei.bigdata.offline
 
-import java.net.URLDecoder
 import java.util.ResourceBundle
 
 import com.alibaba.fastjson.{JSON, JSONObject}
+import jodd.util.URLDecoder
 import org.apache.spark.rdd.RDD
 import org.apache.spark.{SparkConf, SparkContext}
 
