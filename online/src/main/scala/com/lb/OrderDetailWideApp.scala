@@ -1,10 +1,15 @@
 package com.lb
 
+import kafka.server.OffsetManager
+import org.apache.kafka.common.TopicPartition
+import org.apache.spark.SparkConf
+import org.apache.spark.streaming.{Seconds, StreamingContext}
+
 object OrderDetailWideApp {
 
   def main(args: Array[String]): Unit = {
-
-
+  }
+/*
     val sparkConf: SparkConf = new SparkConf().setAppName("dws_order_detail_wide_app").setMaster("local[*]")
     val ssc = new StreamingContext(sparkConf, Seconds(5))
     val orderInfoTopic = "DW_ORDER_INFO"
@@ -83,7 +88,7 @@ object OrderDetailWideApp {
     orderDetailWideFilteredDstream.map(orderwide=>(orderwide.order_id,orderwide.final_total_amount,orderwide.original_total_amount,  orderwide.sku_price,orderwide.sku_num,orderwide.final_detail_amount)).print(1000)
     ssc.start()
     ssc.awaitTermination()
-  }
+  }*/
 
 }
 

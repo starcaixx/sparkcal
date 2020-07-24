@@ -87,16 +87,16 @@ object MyKafkaConsumer {
     * @param topic
     * @return
     */
-  def getOffset(groupId:String,topic:String):Map[TopicPartition,Long]={
+  def getOffset(groupId:String,topic:String)={
     var offsetMap=Map[TopicPartition,Long]()
 
     val jedisClient: Jedis = JdbcUtils.getJedisClient
 
-    val redisOffsetMap: util.Map[String, String] = jedisClient.hgetAll("offset:"+groupId+":"+topic)
+    val redisOffsetMap: java.util.Map[String, String] = jedisClient.hgetAll("offset:"+groupId+":"+topic)
 
-    val offsetJsonObjList: List[JSONObject] = MysqlUtil.queryList("SELECT  group_id ,topic,partition_id  , topic_offset  FROM offset_2020 where group_id='"+groupId+"' and topic='"+topic+"'")
+    MysqlUtil.queryList("SELECT  group_id ,topic,partition_id  , topic_offset  FROM offset_2020 where group_id='"+groupId+"' and topic='"+topic+"'")
 
-    jedisClient.close()
+    /*jedisClient.close()
     if(offsetJsonObjList!=null&&offsetJsonObjList.size==0){
       null
     }else {
@@ -105,7 +105,8 @@ object MyKafkaConsumer {
         (new TopicPartition(offsetJsonObj.getString("topic"),offsetJsonObj.getIntValue("partition_id")), offsetJsonObj.getLongValue("topic_offset"))
       }
       kafkaOffsetList.toMap
-    }
+    }*/
+
   }
 
 }

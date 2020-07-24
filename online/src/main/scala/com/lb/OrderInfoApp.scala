@@ -1,153 +1,114 @@
 package com.lb
 
-object OrderInfoApp {
-  def main(args: Array[String]): Unit = {
+import java.util.ResourceBundle
 
-  }
-
-}
-
-/*
 import com.alibaba.fastjson.{JSON, JSONObject}
-import com.atguigu.gmall2020.realtime.bean.dim.{ProvinceInfo, UserState}
-import com.atguigu.gmall2020.realtime.bean.dw.OrderInfo
-import com.atguigu.gmall2020.realtime.util.{MyKafkaUtil, OffsetManager, PhoenixUtil}
-import org.apache.hadoop.conf.Configuration
-import org.apache.kafka.clients.consumer.ConsumerRecord
-import org.apache.kafka.common.TopicPartition
+import com.lb.util.{MyKafkaConsumer, PhoenixUtil}
 import org.apache.spark.SparkConf
 import org.apache.spark.streaming.dstream.{DStream, InputDStream}
-import org.apache.spark.streaming.kafka010.{HasOffsetRanges, OffsetRange}
+import org.apache.spark.streaming.kafka.{HasOffsetRanges, OffsetRange}
 import org.apache.spark.streaming.{Seconds, StreamingContext}
-import org.apache.phoenix.spark._
-import org.apache.spark.broadcast.Broadcast
-import org.apache.spark.rdd.RDD
 
 object OrderInfoApp {
-
+  private val bundle: ResourceBundle = ResourceBundle.getBundle("jdbc")
 
   def main(args: Array[String]): Unit = {
-    val sparkConf: SparkConf = new SparkConf().setMaster("local[*]").setAppName("dau_app")
-    val ssc = new StreamingContext(sparkConf, Seconds(5))
-    val groupId = "GMALL_ORDER_INFO_CONSUMER"
-    val topic = "ODS_T_ORDER_INFO"
 
-    //从redis读取偏移量
-    val orderOffsets: Map[TopicPartition, Long] = OffsetManager.getOffset(groupId, topic)
+    val checkPoint = ""
+    val ssc: StreamingContext = StreamingContext.getOrCreate(checkPoint,() => currentDayConsumeCount(checkPoint))
 
-    //根据偏移起始点获得数据
-    //判断如果之前没有在redis保存，则从kafka最新加载数据
-    var orderInfoInputDstream: InputDStream[ConsumerRecord[String, String]] = null
-    if (orderOffsets != null && orderOffsets.size > 0) {
-      orderInfoInputDstream = MyKafkaUtil.getKafkaStream(topic, ssc, orderOffsets, groupId)
-    } else {
-      orderInfoInputDstream = MyKafkaUtil.getKafkaStream(topic, ssc, groupId)
-    }
+    ssc.start()
+    ssc.awaitTermination()
+  }
 
-    //获得偏移结束点
-    var orderInfoOffsetRanges: Array[OffsetRange] = Array.empty[OffsetRange]
-    val orderInfoInputGetOffsetDstream: DStream[ConsumerRecord[String, String]] = orderInfoInputDstream.transform { rdd =>
-      orderInfoOffsetRanges = rdd.asInstanceOf[HasOffsetRanges].offsetRanges
+  def currentDayConsumeCount(checkpoint: String): StreamingContext = {
+    val conf: SparkConf = new SparkConf().setMaster("local[*]").setAppName(getClass.getSimpleName)
+      .set("spark.streaming.stopGracefullyOnShutdown","true")
+      .set("spark.streaming.backpressure.enabled","true")
+      .set("spark.streaming.kafka.maxRatePerPartition","200")
+      .set("spark.executor.instances","2")
+      .set("spark.default.parallelism","4")
+      .set("spark.sql.shuffle.partitions","4")
+
+    val interval: Long = bundle.getString("interval").toLong
+    val groupId: String = bundle.getString("groupid")
+
+    val topic: String = bundle.getString("topic")
+    val ssc = new StreamingContext(conf,Seconds(interval))
+
+    ssc.sparkContext.setLogLevel("error")
+    var offsetRanges: Array[OffsetRange]=Array.empty[OffsetRange]
+    val kafkaDS: InputDStream[(String, String)] = MyKafkaConsumer.getKafkaStream(topic,ssc)
+    val transformDS: DStream[(String, String)] = kafkaDS.transform(rdd => {
+      offsetRanges = rdd.asInstanceOf[HasOffsetRanges].offsetRanges
       rdd
-    }
-
-    val orderInfoDstream: DStream[OrderInfo] = orderInfoInputGetOffsetDstream.map { record =>
-      val jsonString: String = record.value()
+    })
+    val orderInfoDS: DStream[OrderInfo] = transformDS.map(record => {
+      val jsonString: String = record._2
       val orderInfo: OrderInfo = JSON.parseObject(jsonString, classOf[OrderInfo])
-
       val createTimeArr: Array[String] = orderInfo.create_time.split(" ")
       orderInfo.create_date = createTimeArr(0)
       orderInfo.create_hour = createTimeArr(1).split(":")(0)
 
       orderInfo
-    }
-
-
-    val orderWithIfFirstDstream: DStream[OrderInfo] = orderInfoDstream.mapPartitions { orderInfoItr =>
+    })
+    val orderWithIsOrderedDS: DStream[OrderInfo] = orderInfoDS.mapPartitions(orderInfoItr => {
       val orderInfoList: List[OrderInfo] = orderInfoItr.toList
       if (orderInfoList.size > 0) {
-        //针对分区中的订单中的所有客户 进行批量查询
         val userIds: String = orderInfoList.map("'" + _.user_id + "'").mkString(",")
-
-        val userStateList: List[JSONObject] = PhoenixUtil.queryList("select user_id,if_consumed from GMALL0919_USER_STATE where user_id in (" + userIds + ")")
-        // [{USERID:123, IF_ORDERED:1 },{USERID:2334, IF_ORDERED:1 },{USERID:4355, IF_ORDERED:1 }]
-        // 进行转换 把List[Map] 变成Map
-        val userIfOrderedMap: Map[Long, String] = userStateList.map(userStateJsonObj => (userStateJsonObj.getLong("USER_ID").toLong, userStateJsonObj.getString("IF_ORDERED"))).toMap
-        //{123:1,2334:1,4355:1}
-        //进行判断 ，打首单表情
+        val userStateList: List[JSONObject] = PhoenixUtil.queryList("select user_id,if_consumed from GMALL_USER_STATE where user_id in (" + userIds + ")")
+        val userIsOrderedMap: Map[Long, String] = userStateList.map(userStateObj => (userStateObj.getLong("USER_ID").toLong, userStateObj.getString("IF_ORDERED"))).toMap
         for (orderInfo <- orderInfoList) {
-          val ifOrderedUser: String = userIfOrderedMap.getOrElse(orderInfo.user_id, "0") //
-          //是下单用户不是首单   否->首单
-          if (ifOrderedUser == "1") {
+          val isOrdered: String = userIsOrderedMap.getOrElse(orderInfo.user_id, "0")
+          if ("1".equals(isOrdered)) {
             orderInfo.if_first_order = "0"
           } else {
             orderInfo.if_first_order = "1"
           }
         }
-        orderInfoList.toIterator
       } else {
-        orderInfoItr
+        println("it's imposible")
       }
-
-    }
-
-
-    //在一个批次内 第一笔如果是首单 那么本批次的该用户其他单据改为非首单
-    // 以userId 进行分组
-    val groupByUserDstream: DStream[(Long, Iterable[OrderInfo])] = orderWithIfFirstDstream.map(orderInfo => (orderInfo.user_id, orderInfo)).groupByKey()
-
-    val orderInfoFinalDstream: DStream[OrderInfo] = groupByUserDstream.flatMap { case (userId, orderInfoItr) =>
-      val orderList: List[OrderInfo] = orderInfoItr.toList
-      //
-      if (orderList.size > 1) { //   如果在这个批次中这个用户有多笔订单
-        val sortedOrderList: List[OrderInfo] = orderList.sortWith((orderInfo1, orderInfo2) => orderInfo1.create_time < orderInfo2.create_time)
-        if (sortedOrderList(0).if_first_order == "1") { //排序后，如果第一笔订单是首单，那么其他的订单都取消首单标志
-          for (i <- 1 to sortedOrderList.size - 1) {
-            sortedOrderList(i).if_first_order = "0"
+      orderInfoList.toIterator
+    })
+    val groupByUserDS: DStream[(Long, Iterable[OrderInfo])] = orderWithIsOrderedDS.map(orderInfo => {
+      (orderInfo.user_id, orderInfo)
+    }).groupByKey()
+    val orderedInfoDS: DStream[OrderInfo] = groupByUserDS.flatMap {
+      case (userId, orderInfoTtr) =>
+        val orderList: List[OrderInfo] = orderInfoTtr.toList
+        if (orderList.size > 1) {
+          val sortedOrderList: List[OrderInfo] = orderList.sortWith((o1, o2) => o1.create_time.compareTo(o2.create_time) < 0)
+          if ("1".equals(sortedOrderList(0).if_first_order)) {
+            for (i <- 1 to sortedOrderList.size - 1) {
+              sortedOrderList(i).if_first_order = "0"
+            }
           }
+          sortedOrderList
+        } else {
+          orderList
         }
-        sortedOrderList
-      } else {
-        orderList
-      }
     }
+    orderedInfoDS.cache()
+    val userStateDS: DStream[UserState] = orderedInfoDS.filter(_.if_first_order=="1").map(orderInfo=>UserState(orderInfo.id,orderInfo.if_first_order))
+    userStateDS.foreachRDD(rdd=>{
+//      rdd.saveToPhenix()
+    })
+    orderInfoDS.print(100)
 
-    orderInfoFinalDstream.cache()
+    //开启检查点
+    ssc.checkpoint(checkpoint)
+    //批处理时间的5-10倍
+    kafkaDS.checkpoint(Seconds(interval * 10))
+    //保存到文件
+    //	resultDStream.saveAsTextFiles("")
 
-    //同步到userState表中  只有标记了 是首单的用户 才需要同步到用户状态表中
-    val userStateDstream: DStream[UserState] = orderInfoFinalDstream.filter(_.if_first_order == "1").map(orderInfo => UserState(orderInfo.id, orderInfo.if_first_order))
-    userStateDstream.foreachRDD { rdd =>
-      rdd.saveToPhoenix("GMALL1122_USER_STATE", Seq("USER_ID", "IF_CONSUMED"), new Configuration(), Some("hadoop1,hadoop2,hadoop3:2181"))
-OffsetManager.saveOffset(groupId ,topic, orderInfoOffsetRanges)
-    }
-    orderInfoFinalDstream.print(1000)
-    ssc.start()
-    ssc.awaitTermination()
+    ssc
   }
 }
- */
 
 /*
 package com.atguigu.gmall2020.realtime.app.o2d
-
-
-import java.text.SimpleDateFormat
-import java.util.Date
-
-import com.alibaba.fastjson.{JSON, JSONObject}
-import com.atguigu.gmall2020.realtime.bean.dim.{ProvinceInfo, UserState}
-import com.atguigu.gmall2020.realtime.bean.dw.OrderInfo
-import com.atguigu.gmall2020.realtime.util.{MyEsUtil, MyKafkaUtil, OffsetManager, PhoenixUtil}
-import org.apache.hadoop.conf.Configuration
-import org.apache.kafka.clients.consumer.ConsumerRecord
-import org.apache.kafka.common.TopicPartition
-import org.apache.spark.SparkConf
-import org.apache.spark.streaming.dstream.{DStream, InputDStream}
-import org.apache.spark.streaming.kafka010.{HasOffsetRanges, OffsetRange}
-import org.apache.spark.streaming.{Seconds, StreamingContext}
-import org.apache.phoenix.spark._
-import org.apache.spark.broadcast.Broadcast
-import org.apache.spark.rdd.RDD
 
 object OrderInfoApp {
 
@@ -304,6 +265,9 @@ for ((id,orderInfo) <- orderInfoList ) {
 }
 
  */
+
+case class UserState(id:Long,if_first_order:String)
+
 case class OrderInfo(
                       id:Long,
                       province_id:Long,

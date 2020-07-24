@@ -1,13 +1,12 @@
 package com.lb.util
 
-import java.sql._
+import java.sql.{Connection, DriverManager, ResultSet, ResultSetMetaData, Statement}
+
 
 object MysqlUtil {
 
   def main(args: Array[String]): Unit = {
-    queryList(
-      "select * from offset"
-    )
+    println("haha")
   }
 
   def queryList(sql:String): Unit ={
@@ -26,8 +25,4 @@ object MysqlUtil {
     conn.close()
   }
 
-//  def main(args: Array[String]): Unit = {
-//    val list:  List[ JSONObject] = queryList("select * from offset_2020")
-//    println(list)
-//  }
 }
