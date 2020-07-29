@@ -67,4 +67,4 @@ object ProvinceInfoApp {
 
  */
 
-case class ProvinceInfo(id:String,name:String,region_id:String,area_code:String)
+case class ProvinceInfo(id: String, name: String, region_id: String, area_code: String)

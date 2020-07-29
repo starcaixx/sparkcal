@@ -3,15 +3,14 @@ package com.lb
 import java.net.URLDecoder
 import java.time.format.DateTimeFormatter
 import java.time.{Instant, LocalDate, LocalDateTime, ZoneId}
-import java.util
 import java.util.ResourceBundle
 
 import com.alibaba.fastjson.{JSON, JSONObject}
-import com.lb.util.{JdbcUtils, MyKafkaConsumer}
+import com.lb.util.JdbcUtils
 import net.ipip.ipdb.{City, CityInfo}
 import org.apache.spark.SparkConf
-import org.apache.spark.streaming.dstream.{DStream, InputDStream}
-import org.apache.spark.streaming.kafka.{HasOffsetRanges, KafkaUtils, OffsetRange}
+import org.apache.spark.streaming.dstream.DStream
+import org.apache.spark.streaming.kafka.{HasOffsetRanges, OffsetRange}
 import org.apache.spark.streaming.{Seconds, StreamingContext}
 import redis.clients.jedis.Jedis
 

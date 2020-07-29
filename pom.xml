@@ -13,7 +13,6 @@
         <module>comm</module>
         <module>log-interceptor</module>
         <module>online</module>
-        <module>phoenix</module>
     </modules>
 
     <properties>

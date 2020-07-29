@@ -25,7 +25,7 @@ public class LoggerController {
         if (jsonObject.getString("start") != null && !"".equals(jsonObject.getString("start"))) {
             kafkaTemplate.send("gmall_start",str);
         }else {
-            kafkaTemplate.send("gmall_envent",str);
+            kafkaTemplate.send("gmall_event",str);
         }
         return "success";
     }

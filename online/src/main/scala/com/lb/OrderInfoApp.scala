@@ -15,7 +15,7 @@ object OrderInfoApp {
   def main(args: Array[String]): Unit = {
 
     val checkPoint = ""
-    val ssc: StreamingContext = StreamingContext.getOrCreate(checkPoint,() => currentDayConsumeCount(checkPoint))
+    val ssc: StreamingContext = StreamingContext.getOrCreate(checkPoint, () => currentDayConsumeCount(checkPoint))
 
     ssc.start()
     ssc.awaitTermination()
@@ -23,22 +23,22 @@ object OrderInfoApp {
 
   def currentDayConsumeCount(checkpoint: String): StreamingContext = {
     val conf: SparkConf = new SparkConf().setMaster("local[*]").setAppName(getClass.getSimpleName)
-      .set("spark.streaming.stopGracefullyOnShutdown","true")
-      .set("spark.streaming.backpressure.enabled","true")
-      .set("spark.streaming.kafka.maxRatePerPartition","200")
-      .set("spark.executor.instances","2")
-      .set("spark.default.parallelism","4")
-      .set("spark.sql.shuffle.partitions","4")
+      .set("spark.streaming.stopGracefullyOnShutdown", "true")
+      .set("spark.streaming.backpressure.enabled", "true")
+      .set("spark.streaming.kafka.maxRatePerPartition", "200")
+      .set("spark.executor.instances", "2")
+      .set("spark.default.parallelism", "4")
+      .set("spark.sql.shuffle.partitions", "4")
 
     val interval: Long = bundle.getString("interval").toLong
     val groupId: String = bundle.getString("groupid")
 
     val topic: String = bundle.getString("topic")
-    val ssc = new StreamingContext(conf,Seconds(interval))
+    val ssc = new StreamingContext(conf, Seconds(interval))
 
     ssc.sparkContext.setLogLevel("error")
-    var offsetRanges: Array[OffsetRange]=Array.empty[OffsetRange]
-    val kafkaDS: InputDStream[(String, String)] = MyKafkaConsumer.getKafkaStream(topic,ssc)
+    var offsetRanges: Array[OffsetRange] = Array.empty[OffsetRange]
+    val kafkaDS: InputDStream[(String, String)] = MyKafkaConsumer.getKafkaStream(topic, ssc)
     val transformDS: DStream[(String, String)] = kafkaDS.transform(rdd => {
       offsetRanges = rdd.asInstanceOf[HasOffsetRanges].offsetRanges
       rdd
@@ -90,9 +90,9 @@ object OrderInfoApp {
         }
     }
     orderedInfoDS.cache()
-    val userStateDS: DStream[UserState] = orderedInfoDS.filter(_.if_first_order=="1").map(orderInfo=>UserState(orderInfo.id,orderInfo.if_first_order))
-    userStateDS.foreachRDD(rdd=>{
-//      rdd.saveToPhenix()
+    val userStateDS: DStream[UserState] = orderedInfoDS.filter(_.if_first_order == "1").map(orderInfo => UserState(orderInfo.id, orderInfo.if_first_order))
+    userStateDS.foreachRDD(rdd => {
+      //      rdd.saveToPhenix()
     })
     orderInfoDS.print(100)
 
@@ -266,25 +266,25 @@ for ((id,orderInfo) <- orderInfoList ) {
 
  */
 
-case class UserState(id:Long,if_first_order:String)
+case class UserState(id: Long, if_first_order: String)
 
 case class OrderInfo(
-                      id:Long,
-                      province_id:Long,
-                      order_status:String,
-                      user_id:Long,
-                      final_total_amount:Double,
-                      benefit_reduce_amount:Double,
-                      original_total_amount:Double,
-                      feight_fee:Double,
-                      expire_time:String,
-                      create_time:String,
-                      operate_time:String,
-                      var create_date:String,
-                      var create_hour:String,
-                      var if_first_order:String,
-                      var province_name:String,
-                      var province_area_code:String,
-                      var user_age_group:String,
-                      var user_gender:String
+                      id: Long,
+                      province_id: Long,
+                      order_status: String,
+                      user_id: Long,
+                      final_total_amount: Double,
+                      benefit_reduce_amount: Double,
+                      original_total_amount: Double,
+                      feight_fee: Double,
+                      expire_time: String,
+                      create_time: String,
+                      operate_time: String,
+                      var create_date: String,
+                      var create_hour: String,
+                      var if_first_order: String,
+                      var province_name: String,
+                      var province_area_code: String,
+                      var user_age_group: String,
+                      var user_gender: String
                     )

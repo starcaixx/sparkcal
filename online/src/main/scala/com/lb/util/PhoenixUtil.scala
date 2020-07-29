@@ -11,7 +11,7 @@ object PhoenixUtil {
     queryList("select * from US_POPULATION")
   }
 
-  def queryList(sql:String): List[JSONObject] ={
+  def queryList(sql: String): List[JSONObject] = {
     Class.forName("org.apache.phoenix.jdbc.PhoenixDriver")
     val connection: Connection = DriverManager.getConnection("jdbc:phoenix:master:2181")
     val stat: Statement = connection.createStatement()
@@ -21,10 +21,10 @@ object PhoenixUtil {
     val resultList = new ListBuffer[JSONObject]()
     while (rs.next()) {
       val rowData = new JSONObject()
-      for (i<- 1 to md.getColumnCount){
-        rowData.put(md.getColumnName(i),rs.getObject(i))
+      for (i <- 1 to md.getColumnCount) {
+        rowData.put(md.getColumnName(i), rs.getObject(i))
       }
-      resultList+=rowData
+      resultList += rowData
     }
     stat.close()
     connection.close()

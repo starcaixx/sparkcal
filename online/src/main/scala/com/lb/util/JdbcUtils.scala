@@ -4,7 +4,6 @@ import java.sql.{Connection, DriverManager}
 import java.util
 import java.util.Properties
 
-import com.lb.StatWatchVedioCount.bundle
 import com.mysql.fabric.jdbc.FabricMySQLDriver
 import org.apache.commons.pool2.impl.GenericObjectPoolConfig
 import redis.clients.jedis.{Jedis, JedisPool}
@@ -20,21 +19,21 @@ object JdbcUtils {
 
   private val dataSources = new util.LinkedList[Connection]()
 
-  private var jedisPool:JedisPool=null
+  private var jedisPool: JedisPool = null
 
   for (i <- 0 to 10) {
     DriverManager.registerDriver(new FabricMySQLDriver)
-//    Class.forName(driver)
-    val con = DriverManager.getConnection(jdbcUrl,jdbcUser,jdbcPassword)
+    //    Class.forName(driver)
+    val con = DriverManager.getConnection(jdbcUrl, jdbcUser, jdbcPassword)
     dataSources.add(con)
   }
 
-  def getConnection:Connection ={
+  def getConnection: Connection = {
     dataSources.removeFirst()
   }
 
-  def getJedisClient:Jedis={
-    if (jedisPool==null) {
+  def getJedisClient: Jedis = {
+    if (jedisPool == null) {
       val poolConfig = new GenericObjectPoolConfig()
       poolConfig.setMaxTotal(prop.getProperty("maxconnects").toInt)
       poolConfig.setMaxIdle(prop.getProperty("maxidle").toInt)
@@ -51,7 +50,7 @@ object JdbcUtils {
     jedisPool.getResource
   }
 
-  def releaseConnection(conn: Connection)={
+  def releaseConnection(conn: Connection) = {
     dataSources.add(conn)
   }
 }
