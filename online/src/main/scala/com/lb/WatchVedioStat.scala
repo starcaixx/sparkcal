@@ -6,7 +6,7 @@ import java.time.{Instant, LocalDate, LocalDateTime, ZoneId}
 import java.util.ResourceBundle
 
 import com.alibaba.fastjson.{JSON, JSONObject}
-import com.lb.util.JdbcUtils
+import com.lb.util.{JdbcUtils, MyKafkaConsumer}
 import net.ipip.ipdb.{City, CityInfo}
 import org.apache.spark.SparkConf
 import org.apache.spark.streaming.dstream.DStream

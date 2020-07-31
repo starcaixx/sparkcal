@@ -3,7 +3,7 @@ package com.lb
 import java.util.ResourceBundle
 
 import com.alibaba.fastjson.{JSON, JSONArray, JSONObject}
-import com.lb.util.MyKafkaConsumer
+import com.lb.util.{MyKafkaConsumer, MyKafkaSink}
 import org.apache.spark.{SparkConf, TaskContext}
 import org.apache.spark.streaming.dstream.{DStream, InputDStream}
 import org.apache.spark.streaming.kafka.{HasOffsetRanges, OffsetRange}
@@ -48,12 +48,13 @@ object CanalDBAPP {
         for (elem <- jsonItr) {
           val tbName: String = elem.getString("table")
           val dataJsonArray: JSONArray = elem.getJSONArray("data")
-          for (i <- 0 to dataJsonArray.size() - 1) {
+
+          for (i <- 0 until dataJsonArray.size()) {
             val jsonObj: JSONObject = dataJsonArray.getJSONObject(i)
             val topic: String = "DW_" + tbName.toUpperCase
             val key: String = tbName + "_" + jsonObj.getString("id")
             //发送到各自topic
-            //            MyKafkaSink.send(topic,key,jsonObj.toJSONString)
+            MyKafkaSink.send(topic,key,jsonObj.toJSONString)
           }
         }
       })
