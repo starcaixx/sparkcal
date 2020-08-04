@@ -5,6 +5,7 @@ import java.time.{Instant, LocalDate, LocalDateTime, ZoneId}
 import java.util.ResourceBundle
 
 import com.alibaba.fastjson.{JSON, JSONObject}
+import com.lb.sparktest.bean.DauInfo
 import com.lb.util.{JdbcUtils, MyEsUtil, MyKafkaConsumer}
 import org.apache.spark.SparkConf
 import org.apache.spark.rdd.RDD
@@ -164,7 +165,7 @@ object RealTimeDauStat {
       println("rdd run....")
       //write2es
       rdd.foreachPartition { dauInfoItr =>
-        val dauInfoWithIdList: List[(String, DauInfo)] = dauInfoItr.toList.map(dauInfo => (dauInfo.dt + "_" + dauInfo.uid, dauInfo))
+        val dauInfoWithIdList: List[(String, DauInfo)] = dauInfoItr.toList.map(dauInfo => (dauInfo.dt + "_" + dauInfo.mid, dauInfo))
         MyEsUtil.executeIndexBulk("lb_dau_info_" + dauInfoItr, dauInfoWithIdList)
       }
 
@@ -180,5 +181,3 @@ object RealTimeDauStat {
   }
 
 }
-
-case class DauInfo(uid: String, dt: String, ts: Long)

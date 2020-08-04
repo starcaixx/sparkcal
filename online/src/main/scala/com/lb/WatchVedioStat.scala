@@ -6,6 +6,7 @@ import java.time.{Instant, LocalDate, LocalDateTime, ZoneId}
 import java.util.ResourceBundle
 
 import com.alibaba.fastjson.{JSON, JSONObject}
+import com.lb.sparktest.bean.WatchUserInfo
 import com.lb.util.{JdbcUtils, MyKafkaConsumer}
 import net.ipip.ipdb.{City, CityInfo}
 import org.apache.spark.SparkConf
@@ -14,7 +15,7 @@ import org.apache.spark.streaming.kafka.{HasOffsetRanges, OffsetRange}
 import org.apache.spark.streaming.{Seconds, StreamingContext}
 import redis.clients.jedis.Jedis
 
-object StatWatchVedioCount {
+object WatchVedioStat {
   private val bundle: ResourceBundle = ResourceBundle.getBundle("jdbc")
   val db = new City(getClass.getClassLoader.getResource("ipipfree.ipdb").getPath)
 
@@ -113,5 +114,3 @@ object StatWatchVedioCount {
   }
 
 }
-
-case class WatchUserInfo(uid: String, regin: String, cid: String, cpid: String, cosid: String, wsize: Long, ts: Long, date: String)

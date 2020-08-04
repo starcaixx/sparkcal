@@ -5,7 +5,7 @@ import org.apache.spark.{SparkConf, SparkContext}
 
 object TestScala {
   def main(args: Array[String]): Unit = {
-    val str: String = List("abcd","efg","haha","hehe","a").mkString(",")
+    val str: String = List("abcd","efg","haha","hehe","a").mkString("','")
     println(str)
   }
 

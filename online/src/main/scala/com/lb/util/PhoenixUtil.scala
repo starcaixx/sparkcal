@@ -8,14 +8,14 @@ import scala.collection.mutable.ListBuffer
 
 object PhoenixUtil {
   def main(args: Array[String]): Unit = {
-    queryList("select * from US_POPULATION")
+    println(queryList("select state,city,population from US_POPULATION"))
   }
 
   def queryList(sql: String): List[JSONObject] = {
     Class.forName("org.apache.phoenix.jdbc.PhoenixDriver")
     val connection: Connection = DriverManager.getConnection("jdbc:phoenix:master:2181")
     val stat: Statement = connection.createStatement()
-    println(sql)
+//    println("sql:"+sql)
     val rs: ResultSet = stat.executeQuery(sql)
     val md: ResultSetMetaData = rs.getMetaData
     val resultList = new ListBuffer[JSONObject]()

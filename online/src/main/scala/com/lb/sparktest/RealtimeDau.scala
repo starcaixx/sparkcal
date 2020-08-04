@@ -5,6 +5,7 @@ import java.time.LocalDate
 import java.util.ResourceBundle
 
 import com.alibaba.fastjson.{JSON, JSONObject}
+import com.lb.sparktest.bean.DauInfo
 import com.lb.util.{JdbcUtils, MyEsUtil, MyKafkaConsumer}
 import org.apache.spark.SparkConf
 import org.apache.spark.streaming.{Seconds, StreamingContext}
@@ -72,6 +73,7 @@ object RealtimeDau {
         val infos: Array[String] = elem._1.split("~")
         val isAdd: lang.Long = jedis.sadd("dau:" + infos(1), infos(0))
         if (1 == isAdd) {
+          jedis.expire("dau:"+infos(1),3600*24*3)
           dauLoginList += elem
         }
       }
@@ -101,4 +103,4 @@ object RealtimeDau {
 }
 
 
-case class DauInfo(mid: String, dt: String, ts: Long)
+

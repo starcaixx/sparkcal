@@ -39,7 +39,6 @@ object MyKafkaConsumer {
 
     val messageHandler = (mmd: MessageAndMetadata[String, String]) => (mmd.topic, mmd.message())
 
-    println("size:" + fromOffsets.size)
     var kafkaDS: InputDStream[(String, String)] = null
     if (fromOffsets.size > 0) {
       kafkaDS = KafkaUtils.createDirectStream[String, String, StringDecoder, StringDecoder, (String, String)](ssc, kafkaParams, fromOffsets, messageHandler)
@@ -80,19 +79,21 @@ object MyKafkaConsumer {
     */
   def saveOffsetToRedis(db: Int, offsetRanges: Array[OffsetRange]) = {
     println("save offset to redis")
-    val jedis: Jedis = JdbcUtils.getJedisClient
-    jedis.select(db)
-    //    val offsetsMap = new mutable.HashMap[String,String]()
+    if (offsetRanges.size>0) {
+      val jedis: Jedis = JdbcUtils.getJedisClient
+      jedis.select(db)
+      //    val offsetsMap = new mutable.HashMap[String,String]()
 
-    for (elem <- offsetRanges) {
-      //      offsetsMap.put(elem.partition.toString,elem.untilOffset.toString) 适用于单个主题
-      if (elem.fromOffset != elem.untilOffset) {
+      for (elem <- offsetRanges) {
+        //      offsetsMap.put(elem.partition.toString,elem.untilOffset.toString) 适用于单个主题
         println("fromOffset:" + elem.fromOffset + ":untilOffset:" + elem.untilOffset)
-        jedis.hset("offset:" + elem.topic, elem.partition.toString, elem.untilOffset.toString)
+        if (elem.fromOffset != elem.untilOffset) {
+          jedis.hset("offset:" + elem.topic, elem.partition.toString, elem.untilOffset.toString)
+        }
       }
+      //    jedis.mset()适用于单个主题
+      jedis.close()
     }
-    //    jedis.mset()适用于单个主题
-    jedis.close()
   }
 
 

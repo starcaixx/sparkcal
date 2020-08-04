@@ -1,10 +1,16 @@
 package com.lb.sparktest.dw
 
+import java.lang
 import java.util.ResourceBundle
 
+import com.alibaba.fastjson.serializer.SerializeConfig
 import com.alibaba.fastjson.{JSON, JSONObject}
-import com.lb.util.{MyKafkaConsumer, PhoenixUtil}
+import com.lb.sparktest.bean.{OrderInfo, ProvinceInfo, UserState}
+import com.lb.util.{MyEsUtil, MyKafkaConsumer, MyKafkaSink, PhoenixUtil}
+import org.apache.hadoop.conf.Configuration
 import org.apache.spark.SparkConf
+import org.apache.spark.broadcast.Broadcast
+import org.apache.spark.rdd.RDD
 import org.apache.spark.streaming.{Seconds, StreamingContext}
 import org.apache.spark.streaming.dstream.{DStream, InputDStream}
 import org.apache.spark.streaming.kafka.{HasOffsetRanges, OffsetRange}
@@ -16,7 +22,9 @@ object OrderInfoApp {
 
   def firstOrderStat(checkpoint: String): StreamingContext = {
 
-    val topic: String = bundle.getString("topic")
+    val topic: String = "ODS_T_ORDER_INFO"
+    val dbIndex = bundle.getString("dbIndex").toInt
+//    val topic: String = bundle.getString("topic")
 
     val conf: SparkConf = new SparkConf().setMaster("local[4]")
       .setAppName(getClass.getSimpleName)
@@ -36,33 +44,100 @@ object OrderInfoApp {
       offsetRanges = rdd.asInstanceOf[HasOffsetRanges].offsetRanges
       rdd
     })
-//    {"database":"gmall","table":"payment_info","type":"delete","ts":1596175213,"xid":2193,"xoffset":795,"data":{"id":5113,"out_trade_no":"866363926297812","order_id":3461,"user_id":96,"alipay_trade_no":"3377183623441392232922916988646873","total_amount":3882.00,"subject":"联想(Lenovo)拯救者Y7000 英特尔酷睿i7 2019新款 15.6英寸发烧游戏本笔记本电脑（i7-9750H 8GB 512GB SSD GTX1650 4G 高色域等1件商品","payment_type":"1103","payment_time":"2020-05-15 13:59:14"}}
     val orderDS: DStream[OrderInfo] = transforDS.mapPartitions(orderItr => {
       val list: List[(String, String)] = orderItr.toList
       val jsonLists = new ListBuffer[OrderInfo]
       for (elem <- list) {
         val info: OrderInfo = JSON.parseObject(elem._2,classOf[OrderInfo])
+        val createtime: Array[String] = info.create_time.split(" ")
+        info.create_date = createtime(0)
+        info.create_hour = createtime(1).split(":")(0)
         jsonLists += info
       }
       jsonLists.toIterator
     })
-    orderDS.mapPartitions(orderItr=>{
-      val condition: String = orderItr.toList.map(_.user_id.toString).mkString(",")
-      var sql = "select xxx from user_state where user_id in ("+condition+")"
+
+    val updateStateDS: DStream[OrderInfo] = orderDS.mapPartitions(orderItr => {
+      val orderInfoOriginlist: List[OrderInfo] = orderItr.toList
+      val condition: String = orderInfoOriginlist.map(_.user_id.toString).mkString("','")
+      var sql = "select USER_ID,IF_CONSUMED from user_state where user_id in ('" + condition + "')"
       val userStateList: List[JSONObject] = PhoenixUtil.queryList(sql)
-      userStateList.map(userStateJson=>{
-        (userStateJson.getString("user_id")
-        )
-      })
-      List(1,2,3).toIterator
+
+      //list 2 map
+      val userStateMap: Map[String, String] = userStateList.map(userStateJson => {
+        (userStateJson.getString("USER_ID"), userStateJson.getString("IF_CONSUMED"))
+      }).toMap
+
+      //遍历每一笔订单并更改状态
+      for (elem <- orderInfoOriginlist) {
+        val isConsumed: String = userStateMap.getOrElse(elem.user_id.toString, null)
+        if (isConsumed!=null &&  "1".equals(isConsumed)) {//消费过
+          elem.if_first_order = "0"
+        } else{//没消费过
+          elem.if_first_order = "1"
+        }
+      }
+
+      orderInfoOriginlist.toIterator
     })
-    kafkaDs.print(10)
+
+    val finalDS: DStream[OrderInfo] = updateStateDS.map(order => {
+      (order.user_id, order)
+    }).groupByKey().flatMap {
+      case (uid, orders) =>
+        val orderInfoes: List[OrderInfo] = orders.toList
+        if (orderInfoes.size > 1) {
+          val sortedLists: List[OrderInfo] = orderInfoes.sortWith((o1, o2) => o1.create_time.compareTo(o2.create_time) < 0)
+          sortedLists
+        } else {
+          orderInfoes
+        }
+    }
+    updateStateDS.cache()
+
+    updateStateDS.print(10)
+    val perfectDS: DStream[OrderInfo] = finalDS.transform(rdd => {
+      val lists: List[JSONObject] = PhoenixUtil.queryList("select ID,NAME,REGION_ID,AREA_CODE from GMALL_PROVINCE_INFO")
+      val provinceMap: Map[lang.Long, ProvinceInfo] = lists.map(jsonObj => (jsonObj.getLong("id"), jsonObj.toJavaObject(classOf[ProvinceInfo]))).toMap
+      val provinBC: Broadcast[Map[lang.Long, ProvinceInfo]] = ssc.sparkContext.broadcast(provinceMap)
+      val value: RDD[OrderInfo] = rdd.mapPartitions(orderItr => {
+        val proBC: Map[lang.Long, ProvinceInfo] = provinBC.value
+        for (elem <- orderDS) {
+          /*elem
+          val provinceInfo: ProvinceInfo = proBC.getOrElse(elem.province_id, null)
+          if (provinceInfo != null) {
+            elem.province_name = provinceInfo.name
+            elem.province_area_code = provinceInfo.area_code
+          }*/
+        }
+        orderItr
+      })
+      value
+    })
+    perfectDS.print(10)
+    perfectDS.foreachRDD(rdd=>{
+      val userStatRDD: RDD[UserState] = rdd.filter(_.if_first_order=="1").map(orderinfo=>UserState(orderinfo.user_id.toString,orderinfo.if_first_order))
+      import org.apache.phoenix.spark._
+      userStatRDD.saveToPhoenix("user_state",Seq("USER_ID","IF_CONSUMED"),new Configuration,Some("master:2181"))
+      rdd.foreachPartition(orderItr=>{
+        val orderInfoList: List[(String, OrderInfo)] = orderItr.toList.map(orderInfo=>(orderInfo.id.toString,orderInfo))
+        //存储es
+        MyEsUtil.executeIndexBulk("gmall_order_info_",orderInfoList)
+
+        //写dw
+        for (elem <- orderInfoList) {
+          MyKafkaSink.send("DW_ORDER_INFO",elem._1,JSON.toJSONString(elem._2,new SerializeConfig(true)))
+        }
+      })
+      //周期性执行
+      MyKafkaConsumer.saveOffsetToRedis(dbIndex,offsetRanges)
+    })
 
     ssc
   }
 
   def main(args: Array[String]): Unit = {
-    val checkpoint = ""
+    val checkpoint = "/Users/longbei/IdeaProjects/sparkcal/sparktest/odappck"
     val ssc: StreamingContext = StreamingContext.getOrCreate(checkpoint,()=>firstOrderStat(checkpoint))
 
     ssc.start()
@@ -70,28 +145,3 @@ object OrderInfoApp {
   }
 
 }
-
-
-case class OrderInfo(
-                      id: Long,
-                      province_id: Long,
-                      order_status: String,
-                      user_id: Long,
-                      final_total_amount: Double,
-                      benefit_reduce_amount: Double,
-                      original_total_amount: Double,
-                      feight_fee: Double,
-                      expire_time: String,
-                      create_time: String,
-                      operate_time: String,
-                      var create_date: String,
-                      var create_hour: String,
-                      var if_first_order:String,
-
-                      var province_name:String,
-                      var province_area_code:String,
-
-                      var user_age_group:String,
-                      var user_gender:String
-
-                    )

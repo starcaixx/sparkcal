@@ -45,14 +45,15 @@ object MaxwellDBAPP {
       rdd.foreachPartition(jsonItr => {
         if (ranges != null && ranges.size > 0) {
           val offsetRange = ranges(TaskContext.get().partitionId())
-          println("from:" + offsetRange.fromOffset + "----to:" + offsetRange.untilOffset)
+//          println("from:" + offsetRange.fromOffset + "----to:" + offsetRange.untilOffset)
         }
         for (elem <- jsonItr) {
           if (!"bootstrap-start".equals(elem.getString("type")) && !"bootstrap-complete".equals(elem.getString("type"))) {
             val tbName: String = elem.getString("table")
             val topic = "ODS_T_" + tbName.toUpperCase()
-            val key = tbName + "_" + elem.getJSONObject("data").getString("id")
-            MyKafkaSink.send(topic,key,elem.toJSONString)
+            val dataObj: JSONObject = elem.getJSONObject("data")
+            val key = tbName + "_" + dataObj.getString("id")
+            MyKafkaSink.send(topic,key,dataObj.toJSONString)
           }
         }
       })
