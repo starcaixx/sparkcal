@@ -1,6 +1,7 @@
 package com.lb.sparktest.dw
 
 import java.lang
+import java.time.LocalDate
 import java.util.ResourceBundle
 
 import com.alibaba.fastjson.serializer.SerializeConfig
@@ -11,7 +12,7 @@ import org.apache.hadoop.conf.Configuration
 import org.apache.spark.SparkConf
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.rdd.RDD
-import org.apache.spark.streaming.{Seconds, StreamingContext}
+import org.apache.spark.streaming.{Duration, Seconds, StreamingContext}
 import org.apache.spark.streaming.dstream.{DStream, InputDStream}
 import org.apache.spark.streaming.kafka.{HasOffsetRanges, OffsetRange}
 
@@ -20,11 +21,20 @@ import scala.collection.mutable.ListBuffer
 object OrderInfoApp {
   private val bundle: ResourceBundle = ResourceBundle.getBundle("jdbc")
 
+  def main(args: Array[String]): Unit = {
+    val checkpoint = "/Users/longbei/IdeaProjects/sparkcal/sparktest/odsorder"
+    val ssc: StreamingContext = StreamingContext.getOrCreate(checkpoint,()=>firstOrderStat(checkpoint))
+
+    ssc.start()
+    ssc.awaitTermination()
+  }
+
+
   def firstOrderStat(checkpoint: String): StreamingContext = {
 
     val topic: String = "ODS_T_ORDER_INFO"
     val dbIndex = bundle.getString("dbIndex").toInt
-//    val topic: String = bundle.getString("topic")
+    //    val topic: String = bundle.getString("topic")
 
     val conf: SparkConf = new SparkConf().setMaster("local[4]")
       .setAppName(getClass.getSimpleName)
@@ -38,6 +48,7 @@ object OrderInfoApp {
 
     val ssc = new StreamingContext(conf,Seconds(10))
     val kafkaDs: InputDStream[(String, String)] = MyKafkaConsumer.getKafkaStream(topic,ssc)
+
 
     var offsetRanges: Array[OffsetRange] = Array.empty[OffsetRange]
     val transforDS: DStream[(String, String)] = kafkaDs.transform(rdd => {
@@ -88,41 +99,47 @@ object OrderInfoApp {
         val orderInfoes: List[OrderInfo] = orders.toList
         if (orderInfoes.size > 1) {
           val sortedLists: List[OrderInfo] = orderInfoes.sortWith((o1, o2) => o1.create_time.compareTo(o2.create_time) < 0)
+          for (i <- 1 until sortedLists.size) {
+            sortedLists(i).if_first_order="0"
+          }
           sortedLists
         } else {
           orderInfoes
         }
     }
-    updateStateDS.cache()
 
-    updateStateDS.print(10)
     val perfectDS: DStream[OrderInfo] = finalDS.transform(rdd => {
       val lists: List[JSONObject] = PhoenixUtil.queryList("select ID,NAME,REGION_ID,AREA_CODE from GMALL_PROVINCE_INFO")
-      val provinceMap: Map[lang.Long, ProvinceInfo] = lists.map(jsonObj => (jsonObj.getLong("id"), jsonObj.toJavaObject(classOf[ProvinceInfo]))).toMap
+      val provinceMap: Map[lang.Long, ProvinceInfo] = lists.map(jsonObj => {
+        (jsonObj.getLong("ID"), jsonObj.toJavaObject(classOf[ProvinceInfo]))
+      }).toMap
       val provinBC: Broadcast[Map[lang.Long, ProvinceInfo]] = ssc.sparkContext.broadcast(provinceMap)
-      val value: RDD[OrderInfo] = rdd.mapPartitions(orderItr => {
-        val proBC: Map[lang.Long, ProvinceInfo] = provinBC.value
-        for (elem <- orderDS) {
-          /*elem
-          val provinceInfo: ProvinceInfo = proBC.getOrElse(elem.province_id, null)
+      val orderInfoWithPro: RDD[OrderInfo] = rdd.mapPartitions(orderItr => {
+        val proMap: Map[lang.Long, ProvinceInfo] = provinBC.value
+        val list: List[OrderInfo] = orderItr.toList
+        for (elem <- list) {
+          val provinceInfo: ProvinceInfo = proMap.getOrElse(elem.province_id, null)
           if (provinceInfo != null) {
-            elem.province_name = provinceInfo.name
             elem.province_area_code = provinceInfo.area_code
-          }*/
+            elem.province_name = provinceInfo.name
+          }
         }
-        orderItr
+        list.toIterator
       })
-      value
+      orderInfoWithPro
     })
-    perfectDS.print(10)
+
+    perfectDS.count().print(1)
     perfectDS.foreachRDD(rdd=>{
       val userStatRDD: RDD[UserState] = rdd.filter(_.if_first_order=="1").map(orderinfo=>UserState(orderinfo.user_id.toString,orderinfo.if_first_order))
       import org.apache.phoenix.spark._
-      userStatRDD.saveToPhoenix("user_state",Seq("USER_ID","IF_CONSUMED"),new Configuration,Some("master:2181"))
+      userStatRDD.saveToPhoenix("user_state",Seq("USER_ID","IF_CONSUMED"),new Configuration,Some("node:2181"))
+      val date: LocalDate = LocalDate.now()
       rdd.foreachPartition(orderItr=>{
         val orderInfoList: List[(String, OrderInfo)] = orderItr.toList.map(orderInfo=>(orderInfo.id.toString,orderInfo))
         //存储es
-        MyEsUtil.executeIndexBulk("gmall_order_info_",orderInfoList)
+
+        MyEsUtil.executeIndexBulk("gmall_order_info_"+date.toString,orderInfoList)
 
         //写dw
         for (elem <- orderInfoList) {
@@ -133,15 +150,9 @@ object OrderInfoApp {
       MyKafkaConsumer.saveOffsetToRedis(dbIndex,offsetRanges)
     })
 
+//        ssc.checkpoint(checkpoint)
+//        kafkaDs.checkpoint(Duration(5*10*1000))
     ssc
-  }
-
-  def main(args: Array[String]): Unit = {
-    val checkpoint = "/Users/longbei/IdeaProjects/sparkcal/sparktest/odappck"
-    val ssc: StreamingContext = StreamingContext.getOrCreate(checkpoint,()=>firstOrderStat(checkpoint))
-
-    ssc.start()
-    ssc.awaitTermination()
   }
 
 }

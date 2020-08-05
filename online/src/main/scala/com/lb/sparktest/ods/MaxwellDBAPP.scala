@@ -49,11 +49,14 @@ object MaxwellDBAPP {
         }
         for (elem <- jsonItr) {
           if (!"bootstrap-start".equals(elem.getString("type")) && !"bootstrap-complete".equals(elem.getString("type"))) {
+            println("elem:"+elem)
             val tbName: String = elem.getString("table")
             val topic = "ODS_T_" + tbName.toUpperCase()
             val dataObj: JSONObject = elem.getJSONObject("data")
-            val key = tbName + "_" + dataObj.getString("id")
-            MyKafkaSink.send(topic,key,dataObj.toJSONString)
+            if (!dataObj.isEmpty){
+              val key = tbName + "_" + dataObj.getString("id")
+              MyKafkaSink.send(topic,key,dataObj.toJSONString)
+            }
           }
         }
       })

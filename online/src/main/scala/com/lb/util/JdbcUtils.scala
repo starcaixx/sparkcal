@@ -12,25 +12,25 @@ object JdbcUtils {
   private val prop = new Properties()
   prop.load(this.getClass.getClassLoader.getResourceAsStream("jdbc.properties"))
 
-  val driver = prop.getProperty("druid.driverClassName")
-  val jdbcUrl = prop.getProperty("druid.url")
-  val jdbcUser = prop.getProperty("druid.username")
-  val jdbcPassword = prop.getProperty("druid.password")
+//  val driver = prop.getProperty("druid.driverClassName")
+//  val jdbcUrl = prop.getProperty("druid.url")
+//  val jdbcUser = prop.getProperty("druid.username")
+//  val jdbcPassword = prop.getProperty("druid.password")
 
-  private val dataSources = new util.LinkedList[Connection]()
+//  private val dataSources = new util.LinkedList[Connection]()
 
   private var jedisPool: JedisPool = null
 
-  for (i <- 0 to 10) {
+  /*for (i <- 0 to 10) {
     DriverManager.registerDriver(new FabricMySQLDriver)
     //    Class.forName(driver)
     val con = DriverManager.getConnection(jdbcUrl, jdbcUser, jdbcPassword)
     dataSources.add(con)
-  }
+  }*/
 
-  def getConnection: Connection = {
+  /*def getConnection: Connection = {
     dataSources.removeFirst()
-  }
+  }*/
 
   def getJedisClient: Jedis = {
     if (jedisPool == null) {
@@ -50,7 +50,7 @@ object JdbcUtils {
     jedisPool.getResource
   }
 
-  def releaseConnection(conn: Connection) = {
+  /*def releaseConnection(conn: Connection) = {
     dataSources.add(conn)
-  }
+  }*/
 }

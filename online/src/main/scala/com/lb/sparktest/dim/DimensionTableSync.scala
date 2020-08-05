@@ -9,7 +9,7 @@ import org.apache.hadoop.conf.Configuration
 import org.apache.spark.SparkConf
 import org.apache.spark.streaming.dstream.{DStream, InputDStream}
 import org.apache.spark.streaming.kafka.{HasOffsetRanges, OffsetRange}
-import org.apache.spark.streaming.{Seconds, StreamingContext}
+import org.apache.spark.streaming.{Duration, Seconds, StreamingContext}
 
 object DimensionTableSync {
 
@@ -28,7 +28,7 @@ object DimensionTableSync {
     val topic: String = bundle.getString("topic_dim")
     val dbIndex = bundle.getString("dbIndex").toInt
     val conf: SparkConf = new SparkConf().setAppName(getClass.getSimpleName)
-      .setMaster("local[4]")
+      .setMaster("local[2]")
       .set("spark.streaming.stopGracefullyOnShutdown", "true")
       .set("spark.streaming.backpressure.enabled", "true")
       .set("spark.streaming.kafka.maxRatePerPartition", "200")
@@ -45,17 +45,21 @@ object DimensionTableSync {
       offsetRanges = rdd.asInstanceOf[HasOffsetRanges].offsetRanges
       rdd
     })
+    transformDS.print(10)
     val provinceDS: DStream[ProvinceInfo] = transformDS.map(record => {
       JSON.parseObject(record._2, classOf[ProvinceInfo])
-    })
+    }).filter(_ != null)
+    provinceDS
 
+    provinceDS.print(10)
     provinceDS.foreachRDD(rdd=>{
       import org.apache.phoenix.spark._
-      rdd.saveToPhoenix("GMALL_PROVINCE_INFO",Seq("ID","NAME","REGION_ID","AREA_CODE"),new Configuration,Some("master:2181"))
+      rdd.saveToPhoenix("GMALL_PROVINCE_INFO",Seq("ID","NAME","REGION_ID","AREA_CODE"),new Configuration,Some("node:2181"))
       MyKafkaConsumer.saveOffsetToRedis(dbIndex,offsetRanges)
-//      save offset to redis
-//        fromOffset:0:untilOffset:2
     })
+
+//    ssc.checkpoint(checkpoint)
+//    kafkaDS.checkpoint(Duration(5*interval*1000))
 
     ssc
   }

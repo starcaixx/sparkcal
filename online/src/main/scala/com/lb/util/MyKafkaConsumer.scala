@@ -86,6 +86,7 @@ object MyKafkaConsumer {
 
       for (elem <- offsetRanges) {
         //      offsetsMap.put(elem.partition.toString,elem.untilOffset.toString) 适用于单个主题
+//        jedis.hset("offset:" + elem.topic, elem.partition.toString, elem.untilOffset.toString)
         println("fromOffset:" + elem.fromOffset + ":untilOffset:" + elem.untilOffset)
         if (elem.fromOffset != elem.untilOffset) {
           jedis.hset("offset:" + elem.topic, elem.partition.toString, elem.untilOffset.toString)
