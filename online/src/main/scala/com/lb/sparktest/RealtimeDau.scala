@@ -44,7 +44,7 @@ object RealtimeDau {
       .set("spark.streaming.concurrentJobs", "4")
     //这个参数?
     val ssc = new StreamingContext(conf, Seconds(interval))
-    val kafkaDS: InputDStream[(String, String)] = MyKafkaConsumer.getKafkaStream(topic, ssc)
+    val kafkaDS: InputDStream[(String, String)] = MyKafkaConsumer.getKafkaStream(dbIndex,topic, ssc)
     kafkaDS.print(10)
     var ranges: Array[OffsetRange] = Array[OffsetRange]()
     val transformDS: DStream[(String, String)] = kafkaDS.transform(rdd => {

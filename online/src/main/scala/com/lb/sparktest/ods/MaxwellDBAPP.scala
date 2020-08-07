@@ -29,7 +29,7 @@ object MaxwellDBAPP {
 
     val topic: String = bundle.getString("topic_ods")
     val dbIndex = bundle.getString("dbIndex").toInt
-    val kafkaDS: InputDStream[(String, String)] = MyKafkaConsumer.getKafkaStream(topic, ssc)
+    val kafkaDS: InputDStream[(String, String)] = MyKafkaConsumer.getKafkaStream(dbIndex,topic, ssc)
     var ranges: Array[OffsetRange] = Array.empty[OffsetRange]
     val recordDS: DStream[(String, String)] = kafkaDS.transform(rdd => {
       ranges = rdd.asInstanceOf[HasOffsetRanges].offsetRanges

@@ -47,7 +47,7 @@ object OrderInfoApp {
       .set("spark.streaming.concurrentJobs", "4")
 
     val ssc = new StreamingContext(conf,Seconds(10))
-    val kafkaDs: InputDStream[(String, String)] = MyKafkaConsumer.getKafkaStream(topic,ssc)
+    val kafkaDs: InputDStream[(String, String)] = MyKafkaConsumer.getKafkaStream(dbIndex,topic,ssc)
 
 
     var offsetRanges: Array[OffsetRange] = Array.empty[OffsetRange]
@@ -108,7 +108,7 @@ object OrderInfoApp {
         }
     }
 
-    val perfectDS: DStream[OrderInfo] = finalDS.transform(rdd => {
+    val orderWithProvinceDS: DStream[OrderInfo] = finalDS.transform(rdd => {
       val lists: List[JSONObject] = PhoenixUtil.queryList("select ID,NAME,REGION_ID,AREA_CODE from GMALL_PROVINCE_INFO")
       val provinceMap: Map[lang.Long, ProvinceInfo] = lists.map(jsonObj => {
         (jsonObj.getLong("ID"), jsonObj.toJavaObject(classOf[ProvinceInfo]))
@@ -129,17 +129,37 @@ object OrderInfoApp {
       orderInfoWithPro
     })
 
-    perfectDS.count().print(1)
+    orderWithProvinceDS.count().print(1)
+    val perfectDS: DStream[OrderInfo] = orderWithProvinceDS.mapPartitions(ordItr => {
+      val ordList: List[OrderInfo] = ordItr.toList
+      if (ordList.size > 0) {
+        val uidlist: List[Long] = ordList.map(_.user_id)
+        val sql = "select id,user_level,birthday,gender,age_group,gender_name from gmall_user_info where id in ('" + uidlist.mkString("','") + "')"
+        val userJsonObjList: List[JSONObject] = PhoenixUtil.queryList(sql)
+        val userJsonMap: Map[lang.Long, JSONObject] = userJsonObjList.map((userJsonObj => (userJsonObj.getLong("ID"), userJsonObj))).toMap
+        for (elem <- ordList) {
+          val userJsnObj: JSONObject = userJsonMap.getOrElse(elem.user_id, null)
+          if (userJsnObj!=null){
+            elem.user_age_group = userJsnObj.getString("AGE_GROUP")
+            elem.user_gender = userJsnObj.getString("GENDER_NAME")
+          }
+        }
+      }
+      ordList.iterator
+    })
+
     perfectDS.foreachRDD(rdd=>{
       val userStatRDD: RDD[UserState] = rdd.filter(_.if_first_order=="1").map(orderinfo=>UserState(orderinfo.user_id.toString,orderinfo.if_first_order))
       import org.apache.phoenix.spark._
+      //字段顺序，参数个数必须一致
       userStatRDD.saveToPhoenix("user_state",Seq("USER_ID","IF_CONSUMED"),new Configuration,Some("node:2181"))
       val date: LocalDate = LocalDate.now()
       rdd.foreachPartition(orderItr=>{
-        val orderInfoList: List[(String, OrderInfo)] = orderItr.toList.map(orderInfo=>(orderInfo.id.toString,orderInfo))
+        val list: List[OrderInfo] = orderItr.toList
+        val orderInfoList: List[(String, OrderInfo)] = list.map(orderInfo=>(orderInfo.id.toString,orderInfo))
         //存储es
 
-        MyEsUtil.executeIndexBulk("gmall_order_info_"+date.toString,orderInfoList)
+        MyEsUtil.executeIndexBulk("gmall_order_info_"+date.toString,list)
 
         //写dw
         for (elem <- orderInfoList) {

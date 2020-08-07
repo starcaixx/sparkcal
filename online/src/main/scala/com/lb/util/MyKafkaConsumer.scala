@@ -14,9 +14,8 @@ import redis.clients.jedis.Jedis
 object MyKafkaConsumer {
   private val bundle: ResourceBundle = ResourceBundle.getBundle("jdbc")
   val brokers: String = bundle.getString("brokers")
-  private val dbIndex: Int = bundle.getString("dbIndex").toInt
 
-  def getKafkaStream(topic: String, ssc: StreamingContext): InputDStream[(String, String)] = {
+  def getKafkaStream(dbIndex:Int,topic: String, ssc: StreamingContext): InputDStream[(String, String)] = {
 
     val kafkaParams: Map[String, String] = Map[String, String](
       //	  "metadata.broker.list" -> brokers,

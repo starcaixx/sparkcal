@@ -55,7 +55,7 @@ object WatchVedioStat {
       }.list.apply().toMap
     }*/
 
-    val kafkaDStream = MyKafkaConsumer.getKafkaStream(topic, ssc)
+    val kafkaDStream = MyKafkaConsumer.getKafkaStream(dbIndex,topic, ssc)
 
     var offsetRanges = Array.empty[OffsetRange]
     val watchuiDStream: DStream[WatchUserInfo] = kafkaDStream.transform(rdd => {

@@ -28,7 +28,7 @@ object CanalDBAPP {
 
     val topic: String = bundle.getString("topic")
     val dbIndex = bundle.getString("dbIndex").toInt
-    val kafkaDS: InputDStream[(String, String)] = MyKafkaConsumer.getKafkaStream(topic, ssc)
+    val kafkaDS: InputDStream[(String, String)] = MyKafkaConsumer.getKafkaStream(dbIndex,topic, ssc)
     var offsetRanges: Array[OffsetRange] = Array.empty[OffsetRange]
     val recordDS: DStream[(String, String)] = kafkaDS.transform(rdd => {
       offsetRanges = rdd.asInstanceOf[HasOffsetRanges].offsetRanges

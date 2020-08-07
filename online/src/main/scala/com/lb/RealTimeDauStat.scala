@@ -89,7 +89,7 @@ object RealTimeDauStat {
 
     val ssc = new StreamingContext(conf, Seconds(interval))
 
-    val kafkaDS: InputDStream[(String, String)] = MyKafkaConsumer.getKafkaStream(topic, ssc)
+    val kafkaDS: InputDStream[(String, String)] = MyKafkaConsumer.getKafkaStream(dbIndex,topic, ssc)
 
     var offsetRanges = Array[OffsetRange]()
     val jsonDS: DStream[JSONObject] = kafkaDS.transform(rdd => {
