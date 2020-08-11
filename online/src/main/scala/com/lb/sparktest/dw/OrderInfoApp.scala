@@ -156,25 +156,27 @@ object OrderInfoApp {
 
     perfectDS.print(10)
     perfectDS.foreachRDD(rdd=>{
-      val userStatRDD: RDD[UserState] = rdd.filter(_.if_first_order=="1").map(orderinfo=>UserState(orderinfo.user_id.toString,orderinfo.if_first_order))
-      import org.apache.phoenix.spark._
-      //字段顺序，参数个数必须一致
-      userStatRDD.saveToPhoenix("user_state",Seq("USER_ID","IF_CONSUMED"),new Configuration,Some("node:2181"))
-      val date: LocalDate = LocalDate.now()
-      rdd.foreachPartition(orderItr=>{
-        val list: List[OrderInfo] = orderItr.toList
-        val orderInfoList: List[(String, OrderInfo)] = list.map(orderInfo=>(orderInfo.id.toString,orderInfo))
-        //存储es
+      if (!rdd.isEmpty()) {
+        val userStatRDD: RDD[UserState] = rdd.filter(_.if_first_order=="1").map(orderinfo=>UserState(orderinfo.user_id.toString,orderinfo.if_first_order))
+        import org.apache.phoenix.spark._
+        //字段顺序，参数个数必须一致
+        userStatRDD.saveToPhoenix("user_state",Seq("USER_ID","IF_CONSUMED"),new Configuration,Some("node:2181"))
+        val date: LocalDate = LocalDate.now()
+        rdd.foreachPartition(orderItr=>{
+          val list: List[OrderInfo] = orderItr.toList
+          val orderInfoList: List[(String, OrderInfo)] = list.map(orderInfo=>(orderInfo.id.toString,orderInfo))
+          //存储es
 
-        MyEsUtil.executeIndexBulk("gmall_order_info_"+date.toString,list)
+          MyEsUtil.executeIndexBulk("gmall_order_info_"+date.toString,list)
 
-        //写dw
-        for (elem <- orderInfoList) {
-          MyKafkaSink.send("DW_ORDER_INFO",elem._1,JSON.toJSONString(elem._2,new SerializeConfig(true)))
-        }
-      })
-      //周期性执行
-      MyKafkaConsumer.saveOffsetToRedis(dbIndex,offsetRanges)
+          //写dw
+          for (elem <- orderInfoList) {
+            MyKafkaSink.send("DW_ORDER_INFO",elem._1,JSON.toJSONString(elem._2,new SerializeConfig(true)))
+          }
+        })
+        //周期性执行
+        MyKafkaConsumer.saveOffsetToRedis(dbIndex,offsetRanges)
+      }
     })
 
 //        ssc.checkpoint(checkpoint)
