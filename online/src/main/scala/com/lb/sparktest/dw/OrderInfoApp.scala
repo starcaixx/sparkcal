@@ -34,9 +34,10 @@ object OrderInfoApp {
 
     val topic: String = "ODS_T_ORDER_INFO"
     val dbIndex = bundle.getString("dbIndex").toInt
+    val processingInterval = bundle.getString("processingInterval").toInt
     //    val topic: String = bundle.getString("topic")
 
-    val conf: SparkConf = new SparkConf().setMaster("local[4]")
+    val conf: SparkConf = new SparkConf().setMaster("local[2]")
       .setAppName(getClass.getSimpleName)
       .set("spark.streaming.stopGracefullyOnShutdown", "true")
       .set("spark.streaming.backpressure.enabled", "true")
@@ -46,7 +47,7 @@ object OrderInfoApp {
       .set("spark.sql.shuffle.partitions", "5")
       .set("spark.streaming.concurrentJobs", "4")
 
-    val ssc = new StreamingContext(conf,Seconds(10))
+    val ssc = new StreamingContext(conf,Seconds(processingInterval))
     val kafkaDs: InputDStream[(String, String)] = MyKafkaConsumer.getKafkaStream(dbIndex,topic,ssc)
 
 
@@ -70,25 +71,26 @@ object OrderInfoApp {
 
     val updateStateDS: DStream[OrderInfo] = orderDS.mapPartitions(orderItr => {
       val orderInfoOriginlist: List[OrderInfo] = orderItr.toList
-      val condition: String = orderInfoOriginlist.map(_.user_id.toString).mkString("','")
-      var sql = "select USER_ID,IF_CONSUMED from user_state where user_id in ('" + condition + "')"
-      val userStateList: List[JSONObject] = PhoenixUtil.queryList(sql)
+      if (orderInfoOriginlist.size>0) {
+        val condition: String = orderInfoOriginlist.map(_.user_id.toString).mkString("','")
+        var sql = "select USER_ID,IF_CONSUMED from user_state where user_id in ('" + condition + "')"
+        val userStateList: List[JSONObject] = PhoenixUtil.queryList(sql)
 
-      //list 2 map
-      val userStateMap: Map[String, String] = userStateList.map(userStateJson => {
-        (userStateJson.getString("USER_ID"), userStateJson.getString("IF_CONSUMED"))
-      }).toMap
+        //list 2 map
+        val userStateMap: Map[String, String] = userStateList.map(userStateJson => {
+          (userStateJson.getString("USER_ID"), userStateJson.getString("IF_CONSUMED"))
+        }).toMap
 
-      //遍历每一笔订单并更改状态
-      for (elem <- orderInfoOriginlist) {
-        val isConsumed: String = userStateMap.getOrElse(elem.user_id.toString, null)
-        if (isConsumed!=null &&  "1".equals(isConsumed)) {//消费过
-          elem.if_first_order = "0"
-        } else{//没消费过
-          elem.if_first_order = "1"
+        //遍历每一笔订单并更改状态
+        for (elem <- orderInfoOriginlist) {
+          val isConsumed: String = userStateMap.getOrElse(elem.user_id.toString, null)
+          if (isConsumed!=null &&  "1".equals(isConsumed)) {//消费过
+            elem.if_first_order = "0"
+          } else{//没消费过
+            elem.if_first_order = "1"
+          }
         }
       }
-
       orderInfoOriginlist.toIterator
     })
 
@@ -109,27 +111,31 @@ object OrderInfoApp {
     }
 
     val orderWithProvinceDS: DStream[OrderInfo] = finalDS.transform(rdd => {
-      val lists: List[JSONObject] = PhoenixUtil.queryList("select ID,NAME,REGION_ID,AREA_CODE from GMALL_PROVINCE_INFO")
-      val provinceMap: Map[lang.Long, ProvinceInfo] = lists.map(jsonObj => {
-        (jsonObj.getLong("ID"), jsonObj.toJavaObject(classOf[ProvinceInfo]))
-      }).toMap
-      val provinBC: Broadcast[Map[lang.Long, ProvinceInfo]] = ssc.sparkContext.broadcast(provinceMap)
-      val orderInfoWithPro: RDD[OrderInfo] = rdd.mapPartitions(orderItr => {
-        val proMap: Map[lang.Long, ProvinceInfo] = provinBC.value
-        val list: List[OrderInfo] = orderItr.toList
-        for (elem <- list) {
-          val provinceInfo: ProvinceInfo = proMap.getOrElse(elem.province_id, null)
-          if (provinceInfo != null) {
-            elem.province_area_code = provinceInfo.area_code
-            elem.province_name = provinceInfo.name
+      if(!rdd.isEmpty()) {
+        val lists: List[JSONObject] = PhoenixUtil.queryList("select ID,NAME,REGION_ID,AREA_CODE from GMALL_PROVINCE_INFO")
+        val provinceMap: Map[lang.Long, ProvinceInfo] = lists.map(jsonObj => {
+          (jsonObj.getLong("ID"), jsonObj.toJavaObject(classOf[ProvinceInfo]))
+        }).toMap
+        val provinBC: Broadcast[Map[lang.Long, ProvinceInfo]] = ssc.sparkContext.broadcast(provinceMap)
+        val orderInfoWithPro: RDD[OrderInfo] = rdd.mapPartitions(orderItr => {
+          val proMap: Map[lang.Long, ProvinceInfo] = provinBC.value
+          val list: List[OrderInfo] = orderItr.toList
+          for (elem <- list) {
+            val provinceInfo: ProvinceInfo = proMap.getOrElse(elem.province_id, null)
+            if (provinceInfo != null) {
+              elem.province_area_code = provinceInfo.area_code
+              elem.province_name = provinceInfo.name
+            }
           }
-        }
-        list.toIterator
-      })
-      orderInfoWithPro
+          list.toIterator
+        })
+        orderInfoWithPro
+      }else{
+        rdd
+      }
+
     })
 
-    orderWithProvinceDS.count().print(1)
     val perfectDS: DStream[OrderInfo] = orderWithProvinceDS.mapPartitions(ordItr => {
       val ordList: List[OrderInfo] = ordItr.toList
       if (ordList.size > 0) {
@@ -148,6 +154,7 @@ object OrderInfoApp {
       ordList.iterator
     })
 
+    perfectDS.print(10)
     perfectDS.foreachRDD(rdd=>{
       val userStatRDD: RDD[UserState] = rdd.filter(_.if_first_order=="1").map(orderinfo=>UserState(orderinfo.user_id.toString,orderinfo.if_first_order))
       import org.apache.phoenix.spark._

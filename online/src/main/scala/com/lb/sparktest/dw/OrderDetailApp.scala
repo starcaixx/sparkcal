@@ -29,7 +29,7 @@ object OrderDetailApp {
     val topic: String = "ODS_T_ORDER_DETAIL"
     val dbIndex = bundle.getString("localDbIndex").toInt
     val conf: SparkConf = new SparkConf().setAppName(getClass.getSimpleName)
-      .setMaster("local[4]")
+      .setMaster("local[2]")
       .set("spark.streaming.stopGracefullyOnShutdown", "true")
       .set("spark.streaming.backpressure.enabled", "true")
       .set("spark.streaming.kafka.maxRatePerPartition", "200")
@@ -37,7 +37,7 @@ object OrderDetailApp {
       .set("spark.default.parallelism", "5")
       .set("spark.sql.shuffle.partitions", "5")
       .set("spark.streaming.concurrentJobs", "4")
-    val ssc = new StreamingContext(conf,Seconds(10))
+    val ssc = new StreamingContext(conf,Seconds(interval))
 
     val kafkaDS: InputDStream[(String, String)] = MyKafkaConsumer.getKafkaStream(dbIndex,topic,ssc)
     var offsetRanges: Array[OffsetRange] = Array.empty[OffsetRange]
@@ -48,28 +48,32 @@ object OrderDetailApp {
     val orderDetailDS: DStream[OrderDetail] = tranFormDS.map(record => {
       JSON.parseObject(record._2, classOf[OrderDetail])
     })
+
     val orderWithSkuDS: DStream[OrderDetail] = orderDetailDS.mapPartitions(detailItr => {
       val orderDetailList: List[OrderDetail] = detailItr.toList
-      val sku_ids: List[Long] = orderDetailList.map(_.sku_id)
-      val sql = "select id ,tm_id,spu_id,category3_id,tm_name ,spu_name,category3_name  from gmall_sku_info  where id in ('" + sku_ids.mkString("','") + "')"
-      val skuJsonObj: List[JSONObject] = PhoenixUtil.queryList(sql)
-      val skuJsonMap: Map[Long, JSONObject] = skuJsonObj.map(skuJsonObj => (skuJsonObj.getLongValue("ID"), skuJsonObj)).toMap
-      for (elem <- orderDetailList) {
-        val skuObj: JSONObject = skuJsonMap.getOrElse(elem.sku_id, null)
-        if (skuObj != null) {
-          elem.spu_id = skuObj.getLong("SPU_ID")
-          elem.spu_name = skuObj.getString("SPU_NAME")
-          elem.tm_id = skuObj.getLong("TM_ID")
-          elem.tm_name = skuObj.getString("TM_NAME")
-          elem.category3_id = skuObj.getLong("CATEGORY3_ID")
-          elem.category3_name = skuObj.getString("CATEGORY3_NAME")
+      if (orderDetailList.size>0) {
+        val sku_ids: List[Long] = orderDetailList.map(_.sku_id)
+        val sql = "select id ,tm_id,spu_id,category3_id,tm_name ,spu_name,category3_name  from gmall_sku_info  where id in ('" + sku_ids.mkString("','") + "')"
+        val skuJsonObj: List[JSONObject] = PhoenixUtil.queryList(sql)
+        val skuJsonMap: Map[Long, JSONObject] = skuJsonObj.map(skuJsonObj => (skuJsonObj.getLongValue("ID"), skuJsonObj)).toMap
+        for (elem <- orderDetailList) {
+          val skuObj: JSONObject = skuJsonMap.getOrElse(elem.sku_id, null)
+          if (skuObj != null) {
+            elem.spu_id = skuObj.getLong("SPU_ID")
+            elem.spu_name = skuObj.getString("SPU_NAME")
+            elem.tm_id = skuObj.getLong("TM_ID")
+            elem.tm_name = skuObj.getString("TM_NAME")
+            elem.category3_id = skuObj.getLong("CATEGORY3_ID")
+            elem.category3_name = skuObj.getString("CATEGORY3_NAME")
+          }
         }
+        orderDetailList.toIterator
+      }else{
+        orderDetailList.toIterator
       }
-      orderDetailList.toIterator
     })
 //    orderWithSkuDS.cache()
     orderWithSkuDS.print(10)
-
     orderWithSkuDS.foreachRDD(rdd=>{
       rdd.foreachPartition(orderDetailItr=>{
         val orderList: List[OrderDetail] = orderDetailItr.toList

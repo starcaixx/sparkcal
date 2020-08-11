@@ -1,7 +1,7 @@
 package com.lb.sparktest.ods
 
 import java.util.ResourceBundle
-
+import scala.util.control.Breaks.{break, breakable}
 import com.alibaba.fastjson.{JSON, JSONObject}
 import com.lb.util.{MyKafkaConsumer, MyKafkaSink}
 import org.apache.spark.streaming.dstream.{DStream, InputDStream}
@@ -15,7 +15,7 @@ object MaxwellDBAPP {
 
   def main(args: Array[String]): Unit = {
 
-    val conf = new SparkConf().setMaster("local[4]")
+    val conf = new SparkConf().setMaster("local[2]")
       .setAppName(getClass.getSimpleName)
       .set("spark.streaming.stopGracefullyOnShutdown", "true")
       .set("spark.streaming.backpressure.enabled", "true")
@@ -25,7 +25,8 @@ object MaxwellDBAPP {
       .set("spark.sql.shuffle.partitions", "5")
       .set("spark.streaming.concurrentJobs", "4")
 
-    val ssc = new StreamingContext(conf, Seconds(10))
+    val processingInterval: Int = bundle.getString("processingInterval").toInt
+    val ssc = new StreamingContext(conf, Seconds(processingInterval))
 
     val topic: String = bundle.getString("topic_ods")
     val dbIndex = bundle.getString("dbIndex").toInt
@@ -48,16 +49,24 @@ object MaxwellDBAPP {
 //          println("from:" + offsetRange.fromOffset + "----to:" + offsetRange.untilOffset)
         }
         for (elem <- jsonItr) {
-          if (!"bootstrap-start".equals(elem.getString("type")) && !"bootstrap-complete".equals(elem.getString("type"))) {
-            println("elem:"+elem)
-            val tbName: String = elem.getString("table")
-            val topic = "ODS_T_" + tbName.toUpperCase()
-            val dataObj: JSONObject = elem.getJSONObject("data")
-            if (!dataObj.isEmpty){
-              val key = tbName + "_" + dataObj.getString("id")
-              MyKafkaSink.send(topic,key,dataObj.toJSONString)
+          breakable{
+            if (!"order_info".equals(elem.getString("table")) && !"order_detail".equals(elem.getString("table"))){
+              break()
+            }else{
+              if (!"bootstrap-start".equals(elem.getString("type")) && !"bootstrap-complete".equals(elem.getString("type"))) {
+                println("elem:"+elem)
+                val tbName: String = elem.getString("table")
+                val topic = "ODS_T_" + tbName.toUpperCase()
+                val dataObj: JSONObject = elem.getJSONObject("data")
+                if (!dataObj.isEmpty){
+                  val key = tbName + "_" + dataObj.getString("id")
+                  MyKafkaSink.send(topic,key,dataObj.toJSONString)
+                }
+              }
             }
           }
+
+
         }
       })
       MyKafkaConsumer.saveOffsetToRedis(dbIndex, ranges)
